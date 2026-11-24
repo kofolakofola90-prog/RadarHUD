@@ -55,7 +55,7 @@ fun matchPlate(clean: String, targets: List<String>): Pair<String, String>? {
 object Store {
   fun loadRadars(c: Context) = try { File(c.filesDir, "radary_cz.json").let { if (it.exists()) parseRadars(it.readText()) else emptyList() } } catch (_: Throwable) { emptyList() }
   fun saveRadars(c: Context, u: Uri): List<RadarPt> = try {
-    val t = c.contentResolver.openInputStream(u)?.bufferedReader()?.use { it.readText() } ?: return emptyList()
+    val t = c.contentResolver.openInputStream(u)?.bufferedReader()?.use { it.readText() } ?: ""
     parseRadars(t).also { if (it.isNotEmpty()) File(c.filesDir, "radary_cz.json").writeText(t) }
   } catch (_: Throwable) { emptyList() }
   fun list(c: Context, k: String, d: Set<String>) = try { c.getSharedPreferences("hud", 0).getStringSet(k, d)?.sorted() ?: d.sorted() } catch (_: Throwable) { d.sorted() }
