@@ -76,7 +76,7 @@ fun notifyUser(c: Context, mode: Int, tts: TextToSpeech?, say: String) {
 @SuppressLint("MissingPermission")
 @Composable
 fun DriveHud(radars: List<RadarPt>, pol: List<String>, sec: List<String>, mode: Int, tts: TextToSpeech?, onMenu: () -> Unit, onExit: () -> Unit) {
-  val ctx = LocalContext.current; val owner = LocalLifecycleOwner.current
+  val ctx = LocalContext.current; val owner = ctx as androidx.lifecycle.LifecycleOwner
   var speed by remember { mutableIntStateOf(0) }
   var nearDist by remember { mutableDoubleStateOf(99999.0) }
   var nearLimit by remember { mutableStateOf<Int?>(null) }
@@ -116,7 +116,7 @@ fun DriveHud(radars: List<RadarPt>, pol: List<String>, sec: List<String>, mode: 
         val ana = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build().also {
           it.setAnalyzer(exec) { px ->
             val now = System.currentTimeMillis()
-            @OptIn(ExperimentalGetImage::class) val img = px.image
+            val img = getImg(px)
             if (img != null && now - lastScan > 250L) {
               lastScan = now
               rec.process(InputImage.fromMediaImage(img, px.imageInfo.rotationDegrees)).addOnSuccessListener { vt ->
@@ -241,3 +241,4 @@ fun MenuSheet(rCount: Int, pol: List<String>, sec: List<String>, mode: Int, onPi
     }
   )
 }
+@androidx.annotation.OptIn(ExperimentalGetImage::class) fun getImg(px: ImageProxy) = px.image
