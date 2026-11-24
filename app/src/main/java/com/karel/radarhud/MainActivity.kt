@@ -241,4 +241,4 @@ fun MenuSheet(rCount: Int, pol: List<String>, sec: List<String>, mode: Int, onPi
     }
   )
 }
-@androidx.annotation.OptIn(ExperimentalGetImage::class) fun getImg(px: ImageProxy) = px.image
+@androidx.annotation.OptIn(markerClass = [ExperimentalGetImage::class]) fun getImg(px: ImageProxy) = px.image
