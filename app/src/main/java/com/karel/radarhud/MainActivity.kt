@@ -1,6 +1,5 @@
 package com.karel.radarhud
 import androidx.core.content.ContextCompat
-import androidx.core.content.ContextCompat
 import android.Manifest; import android.annotation.SuppressLint; import android.app.Activity; import android.content.Context; import android.net.Uri
 import android.os.*; import android.speech.tts.TextToSpeech; import android.view.WindowManager
 import androidx.activity.ComponentActivity; import androidx.activity.compose.rememberLauncherForActivityResult; import androidx.activity.compose.setContent
