@@ -1,16 +1,14 @@
 package com.karel.radarhud
-import androidx.core.content.ContextCompat
 import android.Manifest; import android.annotation.SuppressLint; import android.app.Activity; import android.content.Context; import android.net.Uri
-import android.os.*; import android.speech.tts.TextToSpeech; import android.view.WindowManager
+import android.os.*; import android.speech.tts.TextToSpeech; import android.util.Log; import android.view.WindowManager
 import androidx.activity.ComponentActivity; import androidx.activity.compose.rememberLauncherForActivityResult; import androidx.activity.compose.setContent
-import androidx.activity.result.contract.ActivityResultContracts; import androidx.annotation.OptIn
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.*; import androidx.camera.lifecycle.ProcessCameraProvider; import androidx.camera.view.PreviewView
-import androidx.compose.foundation.*; import androidx.compose.foundation.layout.*; import androidx.compose.foundation.lazy.*
-import androidx.compose.foundation.shape.*; import androidx.compose.material.icons.Icons; import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*; import androidx.compose.runtime.*; import androidx.compose.ui.*
-import androidx.compose.ui.draw.clip; import androidx.compose.ui.geometry.*; import androidx.compose.ui.graphics.*
-import androidx.compose.ui.platform.*; import androidx.compose.ui.text.font.FontWeight; import androidx.compose.ui.unit.*
-import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.foundation.*; import androidx.compose.foundation.layout.*; import androidx.compose.foundation.shape.*; import androidx.compose.material.icons.Icons; import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*; import androidx.compose.runtime.*; import androidx.compose.ui.*; import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.*; import androidx.compose.ui.graphics.*; import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight; import androidx.compose.ui.unit.*; import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.ContextCompat; import androidx.lifecycle.LifecycleOwner
 import com.google.android.gms.location.*; import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition; import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import org.json.*; import java.io.File; import java.util.Locale; import java.util.concurrent.Executors; import kotlin.math.*
@@ -25,7 +23,8 @@ fun parseRadars(json: String): List<RadarPt> = try {
     val o = arr.getJSONObject(i)
     if (o.has("lat") && o.has("lon")) RadarPt(o.getDouble("lat"), o.getDouble("lon"), o.optJSONObject("tags")?.optString("maxspeed")?.filter { it.isDigit() }?.toIntOrNull()) else null
   }.filterNotNull()
-} catch (_: Exception) { emptyList() }
+} catch (_: Throwable) { emptyList() }
+
 fun haversine(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
   val p1 = Math.toRadians(lat1); val p2 = Math.toRadians(lat2)
   val dp = Math.toRadians(lat2 - lat1); val dl = Math.toRadians(lon2 - lon1)
@@ -54,38 +53,113 @@ fun matchPlate(clean: String, targets: List<String>): Pair<String, String>? {
 }
 
 object Store {
-  fun loadRadars(c: Context) = File(c.filesDir, "radary_cz.json").let { if (it.exists()) parseRadars(it.readText()) else emptyList() }
-  fun saveRadars(c: Context, u: Uri): List<RadarPt> {
+  fun loadRadars(c: Context) = try { File(c.filesDir, "radary_cz.json").let { if (it.exists()) parseRadars(it.readText()) else emptyList() } } catch (_: Throwable) { emptyList() }
+  fun saveRadars(c: Context, u: Uri): List<RadarPt> = try {
     val t = c.contentResolver.openInputStream(u)?.bufferedReader()?.use { it.readText() } ?: return emptyList()
-    return parseRadars(t).also { if (it.isNotEmpty()) File(c.filesDir, "radary_cz.json").writeText(t) }
-  }
-  fun list(c: Context, k: String, d: Set<String>) = c.getSharedPreferences("hud", 0).getStringSet(k, d)?.sorted() ?: d.sorted()
-  fun saveList(c: Context, k: String, l: List<String>) = c.getSharedPreferences("hud", 0).edit().putStringSet(k, l.toSet()).apply()
-  fun mode(c: Context) = c.getSharedPreferences("hud", 0).getInt("mode", 0)
-  fun saveMode(c: Context, m: Int) = c.getSharedPreferences("hud", 0).edit().putInt("mode", m).apply()
+    parseRadars(t).also { if (it.isNotEmpty()) File(c.filesDir, "radary_cz.json").writeText(t) }
+  } catch (_: Throwable) { emptyList() }
+  fun list(c: Context, k: String, d: Set<String>) = try { c.getSharedPreferences("hud", 0).getStringSet(k, d)?.sorted() ?: d.sorted() } catch (_: Throwable) { d.sorted() }
+  fun saveList(c: Context, k: String, l: List<String>) { try { c.getSharedPreferences("hud", 0).edit().putStringSet(k, l.toSet()).apply() } catch (_: Throwable) {} }
+  fun mode(c: Context) = try { c.getSharedPreferences("hud", 0).getInt("mode", 0) } catch (_: Throwable) { 0 }
+  fun saveMode(c: Context, m: Int) { try { c.getSharedPreferences("hud", 0).edit().putInt("mode", m).apply() } catch (_: Throwable) {} }
 }
 
 fun notifyUser(c: Context, mode: Int, tts: TextToSpeech?, say: String) {
-  if (mode == 0) tts?.speak(say, TextToSpeech.QUEUE_FLUSH, null, "a")
-  else if (mode == 1) {
-    val v = if (Build.VERSION.SDK_INT >= 31) (c.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator else @Suppress("DEPRECATION") c.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-    v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 250, 100, 250), -1))
+  try {
+    if (mode == 0) tts?.speak(say, TextToSpeech.QUEUE_FLUSH, null, "a")
+    else if (mode == 1) {
+      val v = if (Build.VERSION.SDK_INT >= 31) (c.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator else @Suppress("DEPRECATION") c.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+      v.vibrate(VibrationEffect.createWaveform(longArrayOf(0, 250, 100, 250), -1))
+    }
+  } catch (_: Throwable) {}
+}
+class MainActivity : ComponentActivity() {
+  override fun onCreate(savedInstanceState: Bundle?) {
+    val prev = Thread.getDefaultUncaughtExceptionHandler()
+    Thread.setDefaultUncaughtExceptionHandler { t, e ->
+      try { getSharedPreferences("hud", 0).edit().putString("crash", Log.getStackTraceString(e)).commit() } catch (_: Throwable) {}
+      prev?.uncaughtException(t, e)
+    }
+    super.onCreate(savedInstanceState)
+    setContent { MaterialTheme(colorScheme = darkColorScheme()) { HudRoot() } }
   }
 }
+
+@Composable
+fun HudRoot() {
+  val ctx = LocalContext.current
+  var crashLog by remember { mutableStateOf(try { ctx.getSharedPreferences("hud", 0).getString("crash", null) } catch (_: Throwable) { null }) }
+  var inDrive by remember { mutableStateOf(false) }
+  var menuOpen by remember { mutableStateOf(false) }
+  var radars by remember { mutableStateOf(Store.loadRadars(ctx)) }
+  var polList by remember { mutableStateOf(Store.list(ctx, "pol", setOf("POLICIE", "POLICE"))) }
+  var secList by remember { mutableStateOf(Store.list(ctx, "sec", setOf("1P23456", "5M89012", "4M12345"))) }
+  var alertMode by remember { mutableIntStateOf(Store.mode(ctx)) }
+  var tts by remember { mutableStateOf<TextToSpeech?>(null) }
+
+  DisposableEffect(Unit) {
+    var engine: TextToSpeech? = null
+    try { engine = TextToSpeech(ctx) { if (it == TextToSpeech.SUCCESS) try { engine?.language = Locale("cs", "CZ") } catch (_: Throwable) {} } } catch (_: Throwable) {}
+    tts = engine
+    onDispose { try { engine?.shutdown() } catch (_: Throwable) {} }
+  }
+
+  val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+    uri?.let { val r = Store.saveRadars(ctx, it); if (r.isNotEmpty()) radars = r }
+  }
+  val perms = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { inDrive = true }
+
+  if (!inDrive) {
+    Box(Modifier.fillMaxSize().background(Color(0xFF0B0E14)).padding(20.dp)) {
+      IconButton(onClick = { menuOpen = true }, modifier = Modifier.align(Alignment.TopEnd)) { Icon(Icons.Default.MoreVert, null, tint = Color.White) }
+      Column(Modifier.align(Alignment.Center).verticalScroll(rememberScrollState()), horizontalAlignment = Alignment.CenterHorizontally) {
+        Text("RADAR & SPZ HUD", fontSize = 28.sp, fontWeight = FontWeight.Black, color = Color.White)
+        Spacer(Modifier.height(10.dp))
+        Text("Radary: ${radars.size}  •  SPZ: ${polList.size + secList.size}", color = Color(0xFF9AA4B2))
+        Text("Upozornění: ${listOf("Hlas + Obrazovka", "Vibrace + Obrazovka", "Jen obrazovka")[alertMode]}", color = Color(0xFF00E5FF), fontSize = 14.sp)
+        Spacer(Modifier.height(32.dp))
+        Button(
+          onClick = { perms.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.ACCESS_FINE_LOCATION)) },
+          modifier = Modifier.fillMaxWidth(0.78f).height(76.dp), shape = RoundedCornerShape(18.dp),
+          colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00C853))
+        ) { Text("JÍZDA", fontSize = 28.sp, fontWeight = FontWeight.Black, color = Color.Black) }
+        if (crashLog != null) {
+          Spacer(Modifier.height(20.dp))
+          Text("Poslední chyba (pošli screenshot):", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+          Text(crashLog!!.take(600), color = Color(0xFFFFCDD2), fontSize = 10.sp, modifier = Modifier.background(Color(0x33FF0000), RoundedCornerShape(8.dp)).padding(8.dp))
+          TextButton(onClick = { ctx.getSharedPreferences("hud", 0).edit().remove("crash").apply(); crashLog = null }) { Text("Vymazat chybu") }
+        }
+      }
+    }
+  } else {
+    DriveHud(radars, polList, secList, alertMode, tts, onMenu = { menuOpen = true }, onExit = { inDrive = false })
+  }
+
+  if (menuOpen) MenuSheet(
+    radars.size, polList, secList, alertMode,
+    onPick = { try { picker.launch(arrayOf("*/*")) } catch (_: Throwable) {} },
+    onMode = { alertMode = it; Store.saveMode(ctx, it) },
+    onPol = { polList = it; Store.saveList(ctx, "pol", it) },
+    onSec = { secList = it; Store.saveList(ctx, "sec", it) },
+    onClose = { menuOpen = false }
+  )
+}
+
 @SuppressLint("MissingPermission")
 @Composable
 fun DriveHud(radars: List<RadarPt>, pol: List<String>, sec: List<String>, mode: Int, tts: TextToSpeech?, onMenu: () -> Unit, onExit: () -> Unit) {
-  val ctx = LocalContext.current; val owner = ctx as androidx.lifecycle.LifecycleOwner
+  val ctx = LocalContext.current; val owner = ctx as? LifecycleOwner
   var speed by remember { mutableIntStateOf(0) }
   var nearDist by remember { mutableDoubleStateOf(99999.0) }
   var nearLimit by remember { mutableStateOf<Int?>(null) }
   var lastOcr by remember { mutableStateOf("...") }
   var alert by remember { mutableStateOf<ActiveAlert?>(null) }
   var lastBeep by remember { mutableLongStateOf(0L) }
+  var testIdx by remember { mutableIntStateOf(0) }
 
   DisposableEffect(Unit) {
-    val w = (ctx as? Activity)?.window; w?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-    val client = LocationServices.getFusedLocationProviderClient(ctx)
+    val w = (ctx as? Activity)?.window; try { w?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) } catch (_: Throwable) {}
+    val client = try { LocationServices.getFusedLocationProviderClient(ctx) } catch (_: Throwable) { null }
     val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L).setMinUpdateIntervalMillis(500L).build()
     val cb = object : LocationCallback() {
       override fun onLocationResult(res: LocationResult) {
@@ -101,44 +175,62 @@ fun DriveHud(radars: List<RadarPt>, pol: List<String>, sec: List<String>, mode: 
         }
       }
     }
-    try { client.requestLocationUpdates(req, cb, Looper.getMainLooper()) } catch (_: Exception) {}
-    onDispose { w?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); client.removeLocationUpdates(cb) }
+    try { client?.requestLocationUpdates(req, cb, Looper.getMainLooper()) } catch (_: Throwable) {}
+    onDispose { try { w?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); client?.removeLocationUpdates(cb) } catch (_: Throwable) {} }
   }
-
   Box(Modifier.fillMaxSize().background(Color.Black)) {
     AndroidView(modifier = Modifier.fillMaxSize(), factory = { c ->
       val pv = PreviewView(c); val exec = Executors.newSingleThreadExecutor()
-      val rec = TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS); var lastScan = 0L
-      ProcessCameraProvider.getInstance(c).addListener({
-        val cp = ProcessCameraProvider.getInstance(c).get()
-        val prev = Preview.Builder().build().also { it.setSurfaceProvider(pv.surfaceProvider) }
-        val ana = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build().also {
-          it.setAnalyzer(exec) { px ->
-            val now = System.currentTimeMillis()
-            val img = getImg(px)
-            if (img != null && now - lastScan > 250L) {
-              lastScan = now
-              rec.process(InputImage.fromMediaImage(img, px.imageInfo.rotationDegrees)).addOnSuccessListener { vt ->
-                val clean = vt.text.uppercase().filter { ch -> ch.isLetterOrDigit() }
-                if (clean.length >= 3) lastOcr = clean.take(16)
-                val mp = matchPlate(clean, pol); val ms = if (mp == null) matchPlate(clean, sec) else null
-                if (mp != null) {
-                  alert = ActiveAlert(AlertType.POLICIE, "POLICIE", "${mp.second} ≈ ${mp.first}", now + 4000L)
-                  if (now - lastBeep > 4000L) { lastBeep = now; notifyUser(ctx, mode, tts, "Policie") }
-                } else if (ms != null) {
-                  alert = ActiveAlert(AlertType.SECRET, "SECRET POLICIE", "${ms.second} ≈ ${ms.first}", now + 4000L)
-                  if (now - lastBeep > 4000L) { lastBeep = now; notifyUser(ctx, mode, tts, "Secret policie") }
-                }
-              }.addOnCompleteListener { px.close() }
-            } else px.close()
-          }
-        }
-        try { cp.unbindAll(); cp.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, prev, ana) } catch (_: Exception) {}
-      }, ContextCompat.getMainExecutor(c))
+      val rec = try { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) } catch (_: Throwable) { null }
+      var lastScan = 0L
+      try {
+        ProcessCameraProvider.getInstance(c).addListener({
+          try {
+            val cp = ProcessCameraProvider.getInstance(c).get()
+            val prev = Preview.Builder().build().also { it.setSurfaceProvider(pv.surfaceProvider) }
+            val ana = ImageAnalysis.Builder().setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build().also {
+              it.setAnalyzer(exec) { px ->
+                val now = System.currentTimeMillis()
+                val img = getImg(px)
+                if (img != null && rec != null && now - lastScan > 250L) {
+                  lastScan = now
+                  try {
+                    rec.process(InputImage.fromMediaImage(img, px.imageInfo.rotationDegrees)).addOnSuccessListener { vt ->
+                      val clean = vt.text.uppercase().filter { ch -> ch.isLetterOrDigit() }
+                      if (clean.length >= 3) lastOcr = clean.take(16)
+                      val mp = matchPlate(clean, pol); val ms = if (mp == null) matchPlate(clean, sec) else null
+                      if (mp != null) {
+                        alert = ActiveAlert(AlertType.POLICIE, "POLICIE", "${mp.second} ≈ ${mp.first}", now + 4000L)
+                        if (now - lastBeep > 4000L) { lastBeep = now; notifyUser(ctx, mode, tts, "Policie") }
+                      } else if (ms != null) {
+                        alert = ActiveAlert(AlertType.SECRET, "SECRET POLICIE", "${ms.second} ≈ ${ms.first}", now + 4000L)
+                        if (now - lastBeep > 4000L) { lastBeep = now; notifyUser(ctx, mode, tts, "Secret policie") }
+                      }
+                    }.addOnCompleteListener { px.close() }
+                  } catch (_: Throwable) { px.close() }
+                } else px.close()
+              }
+            }
+            if (owner != null) { cp.unbindAll(); cp.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, prev, ana) }
+          } catch (_: Throwable) {}
+        }, ContextCompat.getMainExecutor(c))
+      } catch (_: Throwable) {}
       pv
     })
 
     Box(Modifier.align(Alignment.Center).fillMaxWidth(0.72f).height(110.dp).border(2.dp, Color(0xAA00E676), RoundedCornerShape(14.dp)))
+
+    TextButton(onClick = {
+      val now = System.currentTimeMillis()
+      val items = listOf(
+        Triple(AlertType.POLICIE, "POLICIE", "POL1CIE ≈ POLICIE") to "Policie",
+        Triple(AlertType.SECRET, "SECRET POLICIE", "5MB9012 ≈ 5M89012") to "Secret policie",
+        Triple(AlertType.RADAR, "RADAR", "250 m") to "Radar"
+      )
+      val pick = items[testIdx++ % 3]
+      alert = ActiveAlert(pick.first.first, pick.first.second, pick.first.third, now + 3000L)
+      notifyUser(ctx, mode, tts, pick.second)
+    }, modifier = Modifier.align(Alignment.TopStart).padding(12.dp).background(Color(0xBB10141C), CircleShape)) { Text("TEST", color = Color.White, fontWeight = FontWeight.Bold) }
 
     Row(Modifier.align(Alignment.TopEnd).padding(12.dp)) {
       IconButton(onClick = onMenu, modifier = Modifier.background(Color(0xBB10141C), CircleShape)) { Icon(Icons.Default.MoreVert, null, tint = Color.White) }
@@ -240,4 +332,6 @@ fun MenuSheet(rCount: Int, pol: List<String>, sec: List<String>, mode: Int, onPi
     }
   )
 }
-@androidx.annotation.OptIn(markerClass = [ExperimentalGetImage::class]) fun getImg(px: ImageProxy) = px.image
+
+@androidx.annotation.OptIn(markerClass = [ExperimentalGetImage::class])
+fun getImg(px: ImageProxy) = px.image
